@@ -2,20 +2,28 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 public class Creature : MonoBehaviour
 {
-    public float maxSpeed = 1.0f;
-
-    public Rigidbody2D rigidbody;
-
-    private void Awake()
+    public bool clicked;
+    
+    public void OnMouseDown()
     {
-        rigidbody = GetComponent<Rigidbody2D>();
+        clicked = true;
     }
 
-    protected Vector2 Calculate()
+    public void OnMouseUp()
     {
-        return Vector2.one;
+        clicked = false;
+    }
+
+    public void OnMouseDrag()
+    {
+        if (clicked)
+        {
+            var position = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            transform.position = new Vector2(position.x, position.y);
+        }
     }
 }

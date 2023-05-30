@@ -2,18 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
-public class Evader : Creature
+public class Evader : MovingCreature
 {
-    public Movements _movements;
-
-    private void Start()
-    {
-        _movements = new Movements(this);
-    }
-
-    private void Update()
-    {
-        rigidbody.velocity = _movements.Wander();
-    }
+    
 }
