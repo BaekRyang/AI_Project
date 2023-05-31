@@ -32,9 +32,9 @@ public class Movements
     }
 
     //WallAvoidance
-    public float wallDetectionFeelerLength = 1f;
+    public float wallDetectionFeelerLength = 2f;
     public float wallDetectionFeelerAngle  = 45f;
-    public float sideFeelerLengthMult      = .5f;
+    public float sideFeelerLengthMult      = .75f;
 
     public Movements(Creature creature)
     {
@@ -47,8 +47,8 @@ public class Movements
     {
         //벽 회피와 배회만 사용
         Vector2 steeringForce = Vector2.zero;
-        steeringForce += WallAvoidance() * 5f;
         steeringForce += Wander()        * 1f;
+        steeringForce += WallAvoidance() * 5f;
 
         //가려고 하는 방향으로 DrawLine
         Debug.DrawLine(agent.transform.position, agent.transform.position + (Vector3)steeringForce, Color.yellow);
@@ -183,9 +183,11 @@ public class Movements
         Vector2 closestPoint = Vector2.zero;
         //가장 가까운 벽의 위치를 저장할 변수를 선언한다.
 
-        foreach (var feeler in feelers)
+        int detectedindex = 0;
+        for (var index = 0; index < feelers.Length; index++)
         {
-            RaycastHit2D hit = feeler.Cast(agent.transform.position, 1 << 6);
+            var          feeler = feelers[index];
+            RaycastHit2D hit    = feeler.Cast(agent.transform.position, 1 << 6);
             //agent의 위치에서 feeler 방향으로 wallDetectionFeelerLength만큼 떨어진 위치에 wallLayerMask를 가진 오브젝트가 있는지 확인한다.
             //각 feeler를 Draw
             Debug.DrawLine(agent.transform.position, feeler.forwarding, Color.cyan);
@@ -201,6 +203,7 @@ public class Movements
 
                 if (distToThisIP < distToClosestIP)
                 {
+                    detectedindex   = index;
                     distToClosestIP = distToThisIP;
                     //가장 가까운 벽과의 거리를 저장한다.
 
@@ -217,13 +220,15 @@ public class Movements
             //가장 가까운 벽과의 거리가 float.MaxValue이면 벽이 없다는 뜻이므로 Vector2.zero를 반환한다.
         }
 
-        Vector2 overShoot = (Vector2)agent.transform.position - closestPoint;
-        //가장 가까운 벽의 위치에서 agent의 위치를 뺀 벡터를 구한다.
+        var overShoot = ((feelers[detectedindex].forwarding * feelers[detectedindex].detectLength) - closestPoint);
+        //가장 가까운 벽의 위치에서 feeler 방향으로 feeler의 길이만큼 떨어진 위치를 구한다.
+        //= feeler가 벽을 뚫고 들어간 만큼의 벡터
         
-        Vector2 fromAgentToClosestPoint = closestPoint - (Vector2)agent.transform.position;
-        Vector2 avoidanceForce          = normal * (1 / fromAgentToClosestPoint.magnitude);
+        //Vector2 fromAgentToClosestPoint = closestPoint - (Vector2)agent.transform.position;
+        //Vector2 avoidanceForce          = normal * (1 / fromAgentToClosestPoint.magnitude);
+        //이 방식은 미는 힘이 너무 약해서 벽에 잘 부딛힘
 
-        // Debug.DrawLine(closestPoint, overShoot, Color.magenta);
+        Vector2 avoidanceForce = normal * overShoot.magnitude;
         return avoidanceForce;
         //overShoot을 반환한다.
     }

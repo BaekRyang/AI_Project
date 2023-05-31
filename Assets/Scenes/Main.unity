@@ -12186,13 +12186,37 @@ PrefabInstance:
       propertyPath: m_Name
       value: Agent
       objectReference: {fileID: 0}
+    - target: {fileID: 8830388891318294317, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8830388891318294318, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 8830388891318294318, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
+      propertyPath: m_DrawMode
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 8830388891318294318, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
       propertyPath: m_SortingOrder
       value: 100
       objectReference: {fileID: 0}
+    - target: {fileID: 8830388891318294318, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
+      propertyPath: m_WasSpriteAssigned
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 8830388891318294319, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
       propertyPath: m_RootOrder
       value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 8830388891318294319, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8830388891318294319, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8830388891318294319, guid: f4e6292a39f92e64a87cc85928d0a3f2, type: 3}
       propertyPath: m_LocalPosition.x
