@@ -6,19 +6,14 @@ using UnityEngine;
 [Serializable]
 public class MovingCreature : Creature
 {
-    public Movements movements;       //이동 관련 함수들을 모아놓은 클래스
-    public Vector2   velocity;        //속도
-    public Vector2   heading;         //방향 벡터 (Normalize)
-    public Vector2   side;            //Heading에 수직 벡터
-    public float     mass        = 1; //질량
-    public float     maxSpeed    = 1; //최대 속도
-    public float     maxForce    = 1; //최대 힘
-    public float     maxTurnRate = 1; //최대 회전 속도
-
-    private void Start()
-    {
-        movements = new Movements(this); //위치를 참조해야 하므로 this를 넘겨준다.
-    }
+    public Movements.Movements movements;       //이동 관련 함수들을 모아놓은 클래스
+    public Vector2             velocity;        //속도
+    public Vector2             heading;         //방향 벡터 (Normalize)
+    public Vector2             side;            //Heading에 수직 벡터
+    public float               mass        = 1; //질량
+    public float               maxSpeed    = 1; //최대 속도
+    public float               maxForce    = 1; //최대 힘
+    public float               maxTurnRate = 1; //최대 회전 속도
 
     private void Update()
     {
