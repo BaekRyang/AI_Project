@@ -33,15 +33,25 @@ public class MovingCreature : Creature
 
     }
     
-    private Vector2 drawPos = Vector2.zero;
+    private Vector2 wallHitPosition = Vector2.zero;
+    private Vector2 agentPosition;
+    private float   radius;
     public void OnDrawGizmos()
     {
         Gizmos.color = Color.black;
-        Gizmos.DrawWireSphere(drawPos, .3f);
+        Gizmos.DrawWireSphere(wallHitPosition, .3f);
+        
+        // Gizmos.color = Color.red;
+        // Gizmos.DrawWireSphere(agentPosition, radius);
     }
 
-    public void Draw(Vector2 position)
+    public void DrawWallHit(Vector2 position)
     {
-        drawPos = position;
+        wallHitPosition = position;
+    }
+    public void DrawGetNeighbour(Vector2 position, float radius)
+    {
+        agentPosition = position;
+        this.radius   = radius;
     }
 }

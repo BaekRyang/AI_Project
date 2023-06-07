@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 using Random = UnityEngine.Random;
 
 namespace Movements
@@ -36,15 +37,31 @@ namespace Movements
     {
         protected MovingCreature agent;
 
-        int steeringFlags = 0;
+        public delegate Vector2 SteeringFunction();
+
+        public                                        int                steeringFlags = 0;
+        [FormerlySerializedAs("Flags In Bit")] public string             steeringFlagsBit;
+        [FormerlySerializedAs("Flags List")]   public List<SteeringType> steeringFlagsList = new List<SteeringType>();
+
+        public List<SteeringType> pSteeringFlagList
+        {
+            get => steeringFlagsList;
+            set { steeringFlagsList = value; }
+        }
+
+        public bool UpdateData;
+
+        List<MovingCreature> neighbors      = new List<MovingCreature>();
+        public static float neighborRadius = 5f;
         
+
         public void SetFlag(SteeringType flag, bool value)
         {
-            if (flag < 0 || (int)flag >= sizeof(short))
+            if (flag < 0 || (int)flag >= sizeof(short) * 8) //flag가 short의 비트 범위를 벗어나면 return
                 return;
 
             int mask = 1 << (int)flag;
-            
+
             if (value)
                 steeringFlags |= mask;
             else
@@ -75,41 +92,145 @@ namespace Movements
         public float wallDetectionFeelerLength = 2f;
         public float wallDetectionFeelerAngle  = 45f;
         public float sideFeelerLengthMult      = .75f;
-        
+
         //Interpose
         private const Deceleration globalDeceleration = Deceleration.Normal;
 
         public Movements(Creature creature, AgentType agentType)
         {
+            UpdateData = false;
+
+            pSteeringFlagList = pSteeringFlagList;
             if (creature is MovingCreature movingCreature)
-            //Creature가 MovingCreature를 상속받았을 때만 agent를 초기화한다.
+                //Creature가 MovingCreature를 상속받았을 때만 agent를 초기화한다.
             {
                 agent = movingCreature;
-                switch (agentType)
+
+                //공통적인 SteeringFlags
+                SetFlag(SteeringType.WallAvoidance, true);
+                SetFlag(SteeringType.Wander, true);
+
+                switch (agentType) //에이전트의 타입에 따라서 다른 SteeringFlags를 사용한다.
                 {
                     case AgentType.Evader:
-                        
+                        SetFlag(SteeringType.Evade, true);
+                        SetFlag(SteeringType.Flee, true);
+                        SetFlag(SteeringType.Separation, true);
+                        SetFlag(SteeringType.Alignment, true);
+                        SetFlag(SteeringType.Cohesion, true);
                         break;
+
                     case AgentType.Chaser:
-                        
+
                         break;
-                    default:
-                        throw new ArgumentOutOfRangeException(nameof(agentType), agentType, null);
                 }
+
+                //steeringFlagsBit에 steeringFlags를 비트로 표현하여 저장
+                steeringFlagsBit = Convert.ToString(steeringFlags, 2).PadLeft(16, '0');
+
+                //플래그 리스트에 활성화된 플래그들 저장
+                foreach (SteeringType type in Enum.GetValues(typeof(SteeringType)))
+                {
+                    int flag = 1 << (int)type;
+                    if ((steeringFlags & flag) != 0)
+                        steeringFlagsList.Add(type);
+                }
+
+                Debug.Log("Data Loaded");
             }
         }
 
         public Vector2 Calculate()
         {
-            //SteeringFlags를 이용해 사용할 함수를 선택한다.
+            if (UpdateData)
+            {
+                steeringFlags = 0; //초기화 하고
 
-            //벽 회피와 배회만 사용
+                agent.velocity = Vector2.zero; //속도 초기화
+
+                if (steeringFlagsList.Count != 0)
+                {
+                    //플래그 업데이트를 해준다.
+                    foreach (SteeringType type in steeringFlagsList)
+                    {
+                        int flag = 1 << (int)type;
+                        steeringFlags |= flag; //덮어씌우기
+                    }
+
+                    //리스트를 순서대로 정렬
+                    steeringFlagsList.Sort((a, b) => (int)a - (int)b);
+
+                    //동일 요소 제거
+                    for (int i = 0; i < steeringFlagsList.Count - 1; i++)
+                    {
+                        if (steeringFlagsList[i] == steeringFlagsList[i + 1])
+                        {
+                            steeringFlagsList.RemoveAt(i);
+                            i--;
+                        }
+                    }
+                }
+
+                steeringFlagsBit = Convert.ToString(steeringFlags, 2).PadLeft(16, '0');
+
+                Debug.Log("Data Changed");
+                UpdateData = false;
+            }
+
             Vector2 steeringForce = Vector2.zero;
-            steeringForce += Wander()        * 1f;
-            steeringForce += WallAvoidance() * 5f;
+
+            //SteeringFlags를 이용해 사용할 함수를 선택한다.
+            foreach (SteeringType type in Enum.GetValues(typeof(SteeringType)))
+            {
+                int flag = 1 << (int)type;
+                if ((steeringFlags & flag) != 0)
+                {
+                    switch (type)
+                    {
+                        case SteeringType.Seek:
+                            break;
+                        case SteeringType.Flee:
+                            break;
+                        case SteeringType.Wander:
+                            steeringForce += Wander() * 1f;
+                            break;
+                        case SteeringType.Arrive:
+                            break;
+                        case SteeringType.Pursuit:
+                            break;
+                        case SteeringType.Evade:
+                            break;
+                        case SteeringType.Cohesion:
+                            steeringForce += Cohesion(GetNeighbors(neighborRadius)) * 1f;
+                            break;
+                        case SteeringType.Separation:
+                            steeringForce += Separation(GetNeighbors(neighborRadius)) * 1f;
+                            break;
+                        case SteeringType.Alignment:
+                            steeringForce += Alignment(GetNeighbors(neighborRadius)) * 1f;
+                            break;
+                        case SteeringType.ObstacleAvoidance:
+                            break;
+                        case SteeringType.WallAvoidance:
+                            steeringForce += WallAvoidance() * 5f;
+                            break;
+                        case SteeringType.FollowPath:
+                            break;
+                        case SteeringType.Interpose:
+                            break;
+                        case SteeringType.Hide:
+                            break;
+                        case SteeringType.OffsetPursuit:
+                            break;
+                        case SteeringType.Flocking:
+                            break;
+                    }
+                }
+            }
 
             //가려고 하는 방향으로 DrawLine
-            Debug.DrawLine(agent.transform.position, agent.transform.position + (Vector3)steeringForce, Color.yellow);
+            Debug.DrawLine(agent.transform.position, agent.transform.position + (Vector3)steeringForce,
+                           Color.yellow);
             return steeringForce;
         }
 
@@ -130,7 +251,7 @@ namespace Movements
             if (Vector2.Distance(agent.transform.position, targetPosition) >
                 panicDistance)       //Vector2에는 Arg를 2개받는 SquareMagnitude가 없다.
                 return Vector2.zero; //(Guard clause)
-        
+
             Vector2 desiredVelocity = ((Vector2)agent.transform.position - targetPosition).normalized * agent.maxSpeed;
             //Seek이랑 정 반대로 목표 지점에서 도망치는 벡터를 구한다.
 
@@ -138,7 +259,8 @@ namespace Movements
             //현재 에이전트에서 가려고 하는 방향벡터 방향으로 틀어주는 벡터을 반환한다.
         }
 
-        public Vector2 Arrive(Vector2 targetPosition, Deceleration deceleration) //이것도 Seek이랑 비슷하지만 목표 지점에 Graceful하게 도착한다.
+        public Vector2
+            Arrive(Vector2 targetPosition, Deceleration deceleration) //이것도 Seek이랑 비슷하지만 목표 지점에 Graceful하게 도착한다.
         {
             Vector2 toTarget = targetPosition - (Vector2)agent.transform.position;
             //Target으로 가는 벡터를 구한다.
@@ -253,7 +375,7 @@ namespace Movements
                 {
                     if (agent is MovingCreature movingCreature)
                     {
-                        movingCreature.Draw(hit.point);
+                        movingCreature.DrawWallHit(hit.point);
                     }
 
                     distToThisIP = Vector2.Distance(agent.transform.position, hit.point);
@@ -281,7 +403,7 @@ namespace Movements
             var overShoot = ((feelers[detectedindex].forwarding * feelers[detectedindex].detectLength) - closestPoint);
             //가장 가까운 벽의 위치에서 feeler 방향으로 feeler의 길이만큼 떨어진 위치를 구한다.
             //= feeler가 벽을 뚫고 들어간 만큼의 벡터
-        
+
             //Vector2 fromAgentToClosestPoint = closestPoint - (Vector2)agent.transform.position;
             //Vector2 avoidanceForce          = normal * (1 / fromAgentToClosestPoint.magnitude);
             //이 방식은 미는 힘이 너무 약해서 벽에 잘 부딛힘
@@ -370,7 +492,7 @@ namespace Movements
         //     return (dir * distAway) + obstaclePos;
         // }
 
-        private Vector2 Separation(List<MovingCreature> neighbors)
+        private Vector2 Separation(List<MovingCreature> neighbors) //분리 : 주변의 Agent들과 일정 거리를 유지하도록 한다.
         {
             Vector2 steeringForce = Vector2.zero;
 
@@ -386,7 +508,7 @@ namespace Movements
             return steeringForce;
         }
 
-        private Vector2 Alignment(List<MovingCreature> neighbors)
+        private Vector2 Alignment(List<MovingCreature> neighbors) //정렬 : 주변의 Agent들의 평균 heading을 구해 그 방향으로 향하도록 한다.
         {
             Vector2 averageHeading = Vector2.zero;
 
@@ -407,7 +529,7 @@ namespace Movements
             return averageHeading;
         }
 
-        private Vector2 Cohesion(List<MovingCreature> neighbors)
+        private Vector2 Cohesion(List<MovingCreature> neighbors) //응집 : 주변의 Agent들의 평균 위치를 구해 그 위치로 향하도록 한다.
         {
             Vector2 centerOfMass  = Vector2.zero;
             Vector2 steeringForce = Vector2.zero;
@@ -428,7 +550,48 @@ namespace Movements
 
             return steeringForce;
         }
-    
-    
+
+
+        private List<MovingCreature> GetNeighbors(float radius) //주변의 Agent들을 구한다.
+        {
+            Collider2D[]         hitColliders = Physics2D.OverlapCircleAll(agent.transform.position, radius);
+            List<MovingCreature> neighbors    = new List<MovingCreature>();
+
+            foreach (Collider2D hitCollider in hitColliders)
+            {
+                MovingCreature neighbor = hitCollider.GetComponent<MovingCreature>();
+                if (neighbor != null && neighbor != agent)
+                {
+                    neighbors.Add(neighbor);
+                }
+            }
+
+            if (agent is MovingCreature movingCreature)
+            {
+                movingCreature.DrawGetNeighbour(agent.transform.position, neighborRadius);
+            }
+
+            return neighbors;
+        }
+
+        private Chaser GetChaser(float radius) //바라보는 방향에 Chaser가 있는지 찾는다..
+        {
+            Collider2D[] hitColliders = Physics2D.OverlapCircleAll(agent.transform.position, radius);
+
+            foreach (Collider2D hitCollider in hitColliders)
+            {
+                Chaser chaser = hitCollider.GetComponent<Chaser>();
+                if (chaser != null)
+                {
+                    //Chase가 heading 방향 140도 안에 있는지 내적을 해서 구한다.
+                    if (Vector2.Dot(agent.heading, (chaser.transform.position - agent.transform.position).normalized) > Mathf.Cos(140f * Mathf.Deg2Rad))
+                        return chaser;
+                    
+                    // if (Vector2.Angle(agent.heading, chaser.transform.position - agent.transform.position) < 140f) 각도를 사용하는 방법
+                }
+            }
+
+            return null;
+        }
     }
 }
