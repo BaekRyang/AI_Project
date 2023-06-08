@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 3219022626366213412}
   - component: {fileID: 3219022626366213413}
   - component: {fileID: 1334047190596422576}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Evader
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -101,7 +101,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   clicked: 0
   movements:
+    steeringFlags: 0
+    steeringFlagsBit: 
+    steeringFlagsList: 
+    UpdateData: 0
+    busy: 0
+    neighborRadius: 0
     panicDistance: 0
+    weightedEvade: 0
     wanderTarget: {x: 0, y: 0}
     wanderRadius: 0
     wanderDistance: 0
@@ -110,12 +117,16 @@ MonoBehaviour:
     wallDetectionFeelerAngle: 0
     sideFeelerLengthMult: 0
   velocity: {x: 0, y: 0}
+  speed: 0
   heading: {x: 0, y: 0}
   side: {x: 0, y: 0}
   mass: 5
   maxSpeed: 2
   maxForce: 0
   maxTurnRate: 0
+  lineRenderers: []
+  lineRendererPrefab: {fileID: 0}
+  threatingValue: 0
 --- !u!50 &3219022626366213413
 Rigidbody2D:
   serializedVersion: 4

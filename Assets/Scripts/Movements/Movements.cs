@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -46,33 +47,25 @@ namespace Movements
         public List<SteeringType> pSteeringFlagList
         {
             get => steeringFlagsList;
-            set { steeringFlagsList = value; }
+            set => steeringFlagsList = value;
         }
 
         public bool UpdateData;
 
-        List<MovingCreature> neighbors      = new List<MovingCreature>();
-        public static float neighborRadius = 5f;
-        
+        public  bool                 busy;
+        private List<MovingCreature> neighbors;
+        private List<MovingCreature> chaser;
 
-        public void SetFlag(SteeringType flag, bool value)
-        {
-            if (flag < 0 || (int)flag >= sizeof(short) * 8) //flag가 short의 비트 범위를 벗어나면 return
-                return;
-
-            int mask = 1 << (int)flag;
-
-            if (value)
-                steeringFlags |= mask;
-            else
-                steeringFlags &= ~mask;
-        }
-
+        // List<MovingCreature> neighbors      = new List<MovingCreature>(); //인수로 바로 넘겨주는중
+        public float neighborRadius = 10f;
 
         //Seek
 
         //Flee
-        [SerializeField] private float panicDistance;
+        [SerializeField] private float panicDistance = 15f;
+
+        //Evade
+        [SerializeField] private bool weightedEvade;
 
         //Wander
         [SerializeField] private Vector2 wanderTarget;
@@ -96,47 +89,56 @@ namespace Movements
         //Interpose
         private const Deceleration globalDeceleration = Deceleration.Normal;
 
+        public IEnumerator CheckAgent()
+        {
+            while (true)
+            {
+                neighbors = GetNeighbors(neighborRadius);
+                chaser    = GetChasers(panicDistance);
+
+                yield return new WaitForSeconds(0.1f);
+            }
+        }
+
         public Movements(Creature creature, AgentType agentType)
         {
             UpdateData = false;
 
             pSteeringFlagList = pSteeringFlagList;
+
             if (creature is MovingCreature movingCreature)
                 //Creature가 MovingCreature를 상속받았을 때만 agent를 초기화한다.
             {
                 agent = movingCreature;
 
                 //공통적인 SteeringFlags
-                SetFlag(SteeringType.WallAvoidance, true);
-                SetFlag(SteeringType.Wander, true);
+                BitFlag.SetFlag((int)SteeringType.WallAvoidance, true, ref steeringFlags);
+                BitFlag.SetFlag((int)SteeringType.Wander, true, ref steeringFlags);
+                BitFlag.SetFlag((int)SteeringType.Separation, true, ref steeringFlags);
 
                 switch (agentType) //에이전트의 타입에 따라서 다른 SteeringFlags를 사용한다.
                 {
                     case AgentType.Evader:
-                        SetFlag(SteeringType.Evade, true);
-                        SetFlag(SteeringType.Flee, true);
-                        SetFlag(SteeringType.Separation, true);
-                        SetFlag(SteeringType.Alignment, true);
-                        SetFlag(SteeringType.Cohesion, true);
+                        BitFlag.SetFlag((int)SteeringType.Evade, true, ref steeringFlags);
+                        BitFlag.SetFlag((int)SteeringType.Flee, true, ref steeringFlags);
+                        BitFlag.SetFlag((int)SteeringType.Alignment, true, ref steeringFlags);
+                        BitFlag.SetFlag((int)SteeringType.Cohesion, true, ref steeringFlags);
                         break;
 
                     case AgentType.Chaser:
-
+                        neighborRadius = 20f;
+                        BitFlag.SetFlag((int)SteeringType.Pursuit, true, ref steeringFlags);
+                        BitFlag.SetFlag((int)SteeringType.Seek, true, ref steeringFlags);
                         break;
                 }
 
                 //steeringFlagsBit에 steeringFlags를 비트로 표현하여 저장
-                steeringFlagsBit = Convert.ToString(steeringFlags, 2).PadLeft(16, '0');
+                steeringFlagsBit = BitFlag.ConvertToString(steeringFlags, 16);
 
                 //플래그 리스트에 활성화된 플래그들 저장
-                foreach (SteeringType type in Enum.GetValues(typeof(SteeringType)))
-                {
-                    int flag = 1 << (int)type;
-                    if ((steeringFlags & flag) != 0)
-                        steeringFlagsList.Add(type);
-                }
+                BitFlag.SetList(steeringFlags, ref steeringFlagsList);
 
-                Debug.Log("Data Loaded");
+                agent.CreateRenderers(steeringFlagsList);
             }
         }
 
@@ -144,19 +146,12 @@ namespace Movements
         {
             if (UpdateData)
             {
-                steeringFlags = 0; //초기화 하고
-
                 agent.velocity = Vector2.zero; //속도 초기화
+
+                steeringFlags = BitFlag.ConvertListToBitFlag(steeringFlagsList); //리스트를 비트로 변환
 
                 if (steeringFlagsList.Count != 0)
                 {
-                    //플래그 업데이트를 해준다.
-                    foreach (SteeringType type in steeringFlagsList)
-                    {
-                        int flag = 1 << (int)type;
-                        steeringFlags |= flag; //덮어씌우기
-                    }
-
                     //리스트를 순서대로 정렬
                     steeringFlagsList.Sort((a, b) => (int)a - (int)b);
 
@@ -171,13 +166,20 @@ namespace Movements
                     }
                 }
 
-                steeringFlagsBit = Convert.ToString(steeringFlags, 2).PadLeft(16, '0');
+                steeringFlagsBit = BitFlag.ConvertToString(steeringFlags, 16);
+
+                agent.CreateRenderers(steeringFlagsList);
 
                 Debug.Log("Data Changed");
                 UpdateData = false;
             }
 
             Vector2 steeringForce = Vector2.zero;
+
+            if (agent is Evader)
+                busy = chaser.Count > 0;
+            else if (agent is Chaser)
+                busy = neighbors.Count > 0;
 
             //SteeringFlags를 이용해 사용할 함수를 선택한다.
             foreach (SteeringType type in Enum.GetValues(typeof(SteeringType)))
@@ -192,27 +194,31 @@ namespace Movements
                         case SteeringType.Flee:
                             break;
                         case SteeringType.Wander:
-                            steeringForce += Wander() * 1f;
+                            if (!busy)
+                                steeringForce += Wander() * 1f;
                             break;
                         case SteeringType.Arrive:
                             break;
                         case SteeringType.Pursuit:
+                            if (busy)
+                                steeringForce += Pursuit(GetClosestEvader(neighbors)) * 1.5f;
                             break;
                         case SteeringType.Evade:
+                            steeringForce += Evade(chaser, weightedEvade) * 3f;
                             break;
                         case SteeringType.Cohesion:
-                            steeringForce += Cohesion(GetNeighbors(neighborRadius)) * 1f;
+                            steeringForce += Cohesion(neighbors) * 1f;
                             break;
                         case SteeringType.Separation:
-                            steeringForce += Separation(GetNeighbors(neighborRadius)) * 1f;
+                            steeringForce += Separation(neighbors) * 1f;
                             break;
                         case SteeringType.Alignment:
-                            steeringForce += Alignment(GetNeighbors(neighborRadius)) * 1f;
+                            steeringForce += Alignment(neighbors) * 1f;
                             break;
                         case SteeringType.ObstacleAvoidance:
                             break;
                         case SteeringType.WallAvoidance:
-                            steeringForce += WallAvoidance() * 5f;
+                            steeringForce += WallAvoidance() * 3f;
                             break;
                         case SteeringType.FollowPath:
                             break;
@@ -228,18 +234,15 @@ namespace Movements
                 }
             }
 
-            //가려고 하는 방향으로 DrawLine
-            Debug.DrawLine(agent.transform.position, agent.transform.position + (Vector3)steeringForce,
-                           Color.yellow);
             return steeringForce;
         }
 
         public Vector2 Seek(Vector2 targetPosition)
         {
-            Debug.DrawLine(agent.transform.position, targetPosition, Color.red);
-
             Vector2 desiredVelocity = (targetPosition - (Vector2)agent.transform.position).normalized * agent.maxSpeed;
             //가고자 하는 방향으로 향하는 벡터에 최대 속도를 곱한다.
+
+            agent.UpdateForwardLine("Seek", desiredVelocity - agent.velocity, Color.blue);
 
             return desiredVelocity - agent.velocity;
             //현재 에이전트에서 가려고 하는 방향벡터 방향으로 틀어주는 벡터을 반환한다.
@@ -254,6 +257,8 @@ namespace Movements
 
             Vector2 desiredVelocity = ((Vector2)agent.transform.position - targetPosition).normalized * agent.maxSpeed;
             //Seek이랑 정 반대로 목표 지점에서 도망치는 벡터를 구한다.
+
+            agent.UpdateForwardLine("Flee", desiredVelocity - agent.velocity, Color.black);
 
             return desiredVelocity - agent.velocity;
             //현재 에이전트에서 가려고 하는 방향벡터 방향으로 틀어주는 벡터을 반환한다.
@@ -283,6 +288,8 @@ namespace Movements
             Vector2 desiredVelocity = toTarget * speed / distance; //Normalize 하기위해 거리로 나눈다.
             //목표 지점으로 향하는 벡터를 구한다. distance = toTarget.magnitude이므로 나누게 되면 방향벡터 * 속도가 된다.
 
+            agent.UpdateForwardLine("Arrive", desiredVelocity - agent.velocity, Color.green);
+
             return desiredVelocity - agent.velocity;
             //현재 에이전트에서 도착 하려는 방향으로 틀어주는 벡터을 반환한다.
         }
@@ -305,7 +312,10 @@ namespace Movements
 
             float lookAheadTime =
                 toEvader.magnitude / (agent.maxSpeed + evader.velocity.magnitude); //velocity.magnitude는 속도
-            //Evader가 Agent를 향해 가는데 걸리는 시간을 구한다. (Evader가 Agent를 향해 가는데 걸리는 거리 / (Agent의 최대 속도 + Evader의 속도))
+            //Evader가 Agent를 향해 가는데 걸리는 시간을 구한다.
+
+            //wallDetectionFeelerLength를 evader가 가까울수록 짧게 만들어준다.
+            wallDetectionFeelerLength = Mathf.Min(wallDetectionFeelerLength, toEvader.magnitude);
 
             return Seek((Vector2)evader.transform.position + evader.velocity * lookAheadTime);
             //evader의 위치에서 evader의 속도 * lookAheadTime만큼 떨어진 위치로 Seek한다.
@@ -317,10 +327,72 @@ namespace Movements
             //Pursuer로 가는 벡터를 구한다.
 
             float lookAheadTime = toPursuer.magnitude / (agent.maxSpeed + pursuer.velocity.magnitude);
-            //Pursuer가 Agent를 향해 가는데 걸리는 시간을 구한다. (Pursuer가 Agent를 향해 가는데 걸리는 거리 / (Agent의 최대 속도 + Pursuer의 속도))
+            //Pursuer가 Agent를 향해 가는데 걸리는 시간을 구한다.
 
             return Flee((Vector2)pursuer.transform.position + pursuer.velocity * lookAheadTime);
             //Pursuer의 위치에서 Pursuer의 속도 * lookAheadTime만큼 떨어진 위치로 Flee한다.
+        }
+
+        public Vector2 Evade(List<MovingCreature> pursuers, bool byWeight) //평균을 통해서 가장 안전해 보이는곳으로 이동
+        {
+            Vector2 finalEvade = Vector2.zero;
+            if (byWeight)
+            {
+                Vector2 cumulativeEvade = Vector2.zero;
+                float   totalWeight     = 0;
+
+                foreach (var pursuer in pursuers)
+                {
+                    Vector2 toPuruser = pursuer.transform.position - agent.transform.position;
+                    //Pursuer로 가는 벡터를 구한다.
+
+                    float distance = toPuruser.magnitude;
+                    //Pursuer로의 거리를 구한다.
+
+                    float weight = 1.0f / (distance + 0.001f); //0으로 나누는 것을 방지하기 위해 0.001을 더한다.
+                    //가중치를 구한다. (거리가 가까울수록 가중치가 높다.)
+
+                    float lookAheadTime = distance / (agent.maxSpeed + pursuer.velocity.magnitude);
+                    //Pursuer가 Agent를 향해 가는데 걸리는 시간을 구한다.
+
+                    Vector2 evade = Flee((Vector2)pursuer.transform.position + pursuer.velocity * lookAheadTime);
+
+                    cumulativeEvade += evade * weight;
+                    //해당 값을 누적시킨다.
+
+                    totalWeight += weight;
+                    //가중치를 누적시킨다.
+                }
+
+                if (pursuers.Count > 0)
+                {
+                    finalEvade = cumulativeEvade / totalWeight;
+                }
+            }
+            else
+            {
+                Vector2 cumulativeEvade = Vector2.zero;
+
+                foreach (var pursuer in pursuers)
+                {
+                    Vector2 toPuruser = pursuer.transform.position - agent.transform.position;
+                    //Pursuer로 가는 벡터를 구한다.
+                    float lookAheadTime = toPuruser.magnitude / (agent.maxSpeed + pursuer.velocity.magnitude);
+                    //Pursuer가 Agent를 향해 가는데 걸리는 시간을 구한다.
+                    Vector2 evade = Flee((Vector2)pursuer.transform.position + pursuer.velocity * lookAheadTime);
+                    //Pursuer의 위치에서 Pursuer의 속도 * lookAheadTime만큼 떨어진 위치로 Flee한다.
+                    cumulativeEvade += evade;
+                    //해당 값을 누적시킨다.
+                }
+
+                if (pursuers.Count > 0)
+                {
+                    finalEvade = cumulativeEvade / pursuers.Count;
+                }
+            }
+
+            Debug.DrawLine(agent.transform.position, agent.transform.position + (Vector3)finalEvade, Color.green);
+            return finalEvade;
         }
 
         public Vector2 Wander()
@@ -346,6 +418,8 @@ namespace Movements
 
             Debug.DrawLine(agent.transform.position, targetWorld, Color.red); //어디로 가는지 Visualize
 
+            agent.UpdateForwardLine("Wander", targetWorld - (Vector2)agent.transform.position, Color.red);
+
             return targetWorld - (Vector2)agent.transform.position;
             //현재 에이전트에서 wanderTarget으로 향하는 벡터를 반환한다.
         }
@@ -356,7 +430,6 @@ namespace Movements
             Feeler[] feelers = CreateFeeler();
             Vector2  normal  = Vector2.zero;
 
-            float distToThisIP    = 0;
             float distToClosestIP = float.MaxValue;
             //가장 가까운 벽과의 거리를 구하기 위한 변수를 선언한다.
 
@@ -378,7 +451,7 @@ namespace Movements
                         movingCreature.DrawWallHit(hit.point);
                     }
 
-                    distToThisIP = Vector2.Distance(agent.transform.position, hit.point);
+                    var distToThisIP = Vector2.Distance(agent.transform.position, hit.point);
                     //agent와 벽과의 거리를 구한다.
 
                     if (distToThisIP < distToClosestIP)
@@ -492,7 +565,7 @@ namespace Movements
         //     return (dir * distAway) + obstaclePos;
         // }
 
-        private Vector2 Separation(List<MovingCreature> neighbors) //분리 : 주변의 Agent들과 일정 거리를 유지하도록 한다.
+        private Vector2 Separation(List<MovingCreature> neighbors)
         {
             Vector2 steeringForce = Vector2.zero;
 
@@ -500,15 +573,20 @@ namespace Movements
             {
                 if (neighbor != agent && neighbor != null)
                 {
-                    Vector2 toAgent = agent.transform.position - neighbor.transform.position;
-                    steeringForce += toAgent.normalized / toAgent.magnitude;
+                    if (neighbor.GetType() == agent.GetType())
+                    {
+                        Vector2 toAgent = agent.transform.position - neighbor.transform.position;
+
+                        if (toAgent.magnitude != 0) //두 객체가 같은 위치에 있으면 오류발생함
+                            steeringForce += toAgent.normalized / toAgent.magnitude;
+                    }
                 }
             }
 
             return steeringForce;
         }
 
-        private Vector2 Alignment(List<MovingCreature> neighbors) //정렬 : 주변의 Agent들의 평균 heading을 구해 그 방향으로 향하도록 한다.
+        private Vector2 Alignment(List<MovingCreature> neighbors)
         {
             Vector2 averageHeading = Vector2.zero;
 
@@ -516,7 +594,10 @@ namespace Movements
             {
                 if (neighbor != agent && neighbor != null)
                 {
-                    averageHeading += neighbor.heading;
+                    if (neighbor.GetType() == agent.GetType())
+                    {
+                        averageHeading += neighbor.heading;
+                    }
                 }
             }
 
@@ -529,7 +610,7 @@ namespace Movements
             return averageHeading;
         }
 
-        private Vector2 Cohesion(List<MovingCreature> neighbors) //응집 : 주변의 Agent들의 평균 위치를 구해 그 위치로 향하도록 한다.
+        private Vector2 Cohesion(List<MovingCreature> neighbors)
         {
             Vector2 centerOfMass  = Vector2.zero;
             Vector2 steeringForce = Vector2.zero;
@@ -538,7 +619,10 @@ namespace Movements
             {
                 if (neighbor != agent && neighbor != null)
                 {
-                    centerOfMass += (Vector2)neighbor.transform.position;
+                    if (neighbor.GetType() == agent.GetType())
+                    {
+                        centerOfMass += (Vector2)neighbor.transform.position;
+                    }
                 }
             }
 
@@ -552,6 +636,7 @@ namespace Movements
         }
 
 
+
         private List<MovingCreature> GetNeighbors(float radius) //주변의 Agent들을 구한다.
         {
             Collider2D[]         hitColliders = Physics2D.OverlapCircleAll(agent.transform.position, radius);
@@ -559,39 +644,60 @@ namespace Movements
 
             foreach (Collider2D hitCollider in hitColliders)
             {
-                MovingCreature neighbor = hitCollider.GetComponent<MovingCreature>();
-                if (neighbor != null && neighbor != agent)
-                {
-                    neighbors.Add(neighbor);
-                }
-            }
+                if (!hitCollider.TryGetComponent(out MovingCreature neighbor) ||
+                    neighbor is not Evader                                    ||
+                    neighbor == agent) continue;
+                //hitCollider가 MovingCreature가 아니거나 Evader가 아니거나 자기 자신이면 넘어간다.
 
-            if (agent is MovingCreature movingCreature)
-            {
-                movingCreature.DrawGetNeighbour(agent.transform.position, neighborRadius);
+                neighbors.Add(neighbor);
             }
 
             return neighbors;
         }
 
-        private Chaser GetChaser(float radius) //바라보는 방향에 Chaser가 있는지 찾는다..
+        private List<MovingCreature> GetChasers(float radius) //바라보는 방향에 Chaser가 있는지 찾는다.
         {
             Collider2D[] hitColliders = Physics2D.OverlapCircleAll(agent.transform.position, radius);
+            //radius 안에 있는 Chaser를 구한다.
 
-            foreach (Collider2D hitCollider in hitColliders)
+            List<MovingCreature> chasers = new List<MovingCreature>();
+
+            foreach (Collider2D hitCollider in hitColliders) //hitCollider를 돌면서 Chaser를 구한다.
             {
-                Chaser chaser = hitCollider.GetComponent<Chaser>();
-                if (chaser != null)
+                if (!hitCollider.TryGetComponent(out MovingCreature chaser) ||
+                    chaser is not Chaser) continue;
+                //hitCollider가 MovingCreature가 아니거나 Chaser가 아니면 넘어간다.
+
+                //Chase가 heading 방향 140도 안에 있는지 내적을 해서 구한다.
+                // if (Vector2.Dot(agent.heading, (chaser.transform.position - agent.transform.position).normalized) >
+                //     Mathf.Cos(140f * Mathf.Deg2Rad))
                 {
-                    //Chase가 heading 방향 140도 안에 있는지 내적을 해서 구한다.
-                    if (Vector2.Dot(agent.heading, (chaser.transform.position - agent.transform.position).normalized) > Mathf.Cos(140f * Mathf.Deg2Rad))
-                        return chaser;
-                    
-                    // if (Vector2.Angle(agent.heading, chaser.transform.position - agent.transform.position) < 140f) 각도를 사용하는 방법
+                    chasers.Add(chaser);
+                }
+
+                // if (Vector2.Angle(agent.heading, chaser.transform.position - agent.transform.position) < 140f) 각도를 사용하는 방법
+            }
+
+            return chasers; //Chaser를 반환한다.
+        }
+
+        private MovingCreature GetClosestEvader(List<MovingCreature> evaders)
+        {
+            float          closestDist   = float.MaxValue;
+            MovingCreature closestEvader = null;
+
+            foreach (MovingCreature evader in evaders)
+            {
+                float dist = Vector2.Distance(agent.transform.position, evader.transform.position);
+
+                if (dist < closestDist)
+                {
+                    closestDist   = dist;
+                    closestEvader = evader;
                 }
             }
 
-            return null;
+            return closestEvader;
         }
     }
 }

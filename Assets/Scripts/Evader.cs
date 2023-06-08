@@ -7,8 +7,10 @@ using UnityEngine.EventSystems;
 
 public class Evader : MovingCreature
 {
+    public float threatingValue;
     private void Start()
     {
         movements = new Movements.Movements(this, AgentType.Evader); //위치를 참조해야 하므로 this를 넘겨준다.
+        StartCoroutine(movements.CheckAgent());
     }
 }
