@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Movements;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 [Serializable]
 public class MovingCreature : Creature
@@ -17,12 +18,48 @@ public class MovingCreature : Creature
     public float               maxForce    = 1; //최대 힘
     public float               maxTurnRate = 1; //최대 회전 속도
 
+    [SerializeField] private Sprite[]   serializeSprite;
+    public                   Sprite[,] movingSprites = new Sprite[4,4]; 
+
     public Dictionary<string, LineRenderer> lineRenderers = new Dictionary<string, LineRenderer>();
     public GameObject                       lineRendererPrefab;
+
+    private SpriteRenderer spriteRenderer;
 
     private void Awake()
     {
         lineRendererPrefab = Resources.Load("Prefabs/LineRenderer") as GameObject;
+
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 3; j++)
+                movingSprites[i,j] = serializeSprite[i * 3 + j];
+        
+        spriteRenderer = GetComponent<SpriteRenderer>();
+    }
+
+    private void Update()
+    {
+        //heading에 따라서 스프라이트를 바꾼다.
+        //아래 왼쪽 오른쪽 위 순서로 스프라이트가 저장되어 있다.
+        //2차원 배열의 첫번째는 방향, 두번째는 움직임 표현
+        //그러므로 두번째 배열은 무조건 1로 사용
+        if (Math.Abs(heading.x) > Math.Abs(heading.y))
+        {
+            //x 방향으로의 움직임이 y 방향보다 크다.
+            if (heading.x > 0)
+                spriteRenderer.sprite = movingSprites[2,1];
+            else
+                spriteRenderer.sprite = movingSprites[1,1];
+        }
+        else
+        {
+            //y 방향으로의 움직임이 x 방향보다 크거나 같다.
+            if (heading.y > 0)
+                spriteRenderer.sprite = movingSprites[3,1];
+            else
+                spriteRenderer.sprite = movingSprites[0,1];
+        }
+
     }
 
     public void CreateRenderers(List<SteeringType> lists)
@@ -122,4 +159,5 @@ public class MovingCreature : Creature
     {
         wallHitPosition = position;
     }
+    
 }
